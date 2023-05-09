@@ -6,26 +6,9 @@
 #include <sstream>
 #include <fstream>
 
-#define ASSERT(x) if (!(x)) __debugbreak();
-#define GLCall(x) GLClearError(); x; ASSERT(GLLogCall(#x, __FILE__, __LINE__))
-
-
-
-static void GLClearError()
-{
-    while (glGetError() != GL_NO_ERROR);
-}
-
-static bool GLLogCall(const char* function, const char* file, int line)
-{
-    while (GLenum error = glGetError())
-    {
-        std::cout << "[OpenGL error] (" << error << "): " << 
-            function << " line: " << line << std::endl;
-        return false;
-    }
-    return true;
-}
+#include "Renderer.h"
+#include "VertexBuffer.h"
+#include "IndexBuffer.h"
 
 
 struct ShaderProgramSource
@@ -126,6 +109,10 @@ int main(void)
     if (!glfwInit())
         return -1;
 
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
     /* Create a windowed mode window and its OpenGL context */
     window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
     if (!window)
@@ -144,76 +131,91 @@ int main(void)
 
     std::cout << glGetString(GL_VERSION) << std::endl;
 
-    // joka rivillä x, y -koordinaatit kolmelle eri vertexille
-    float positions[] = {
-       -0.5f, -0.5f,
-        0.5f, -0.5f,
-        0.5f,  0.5f,
-       -0.5f,  0.5f,
-    };
-
-    unsigned int indices[] = {
-        0, 1, 2,   // kolmion kulmat positions-rivit
-        2, 3, 0
-    };
-
-
-    unsigned int iBuffer;
-    GLCall(glGenBuffers(1, &iBuffer));  // &iBuffer = generoidun bufferin ID
-    GLCall(glBindBuffer(GL_ARRAY_BUFFER, iBuffer));  // binding = valitaan
-    GLCall(glBufferData(GL_ARRAY_BUFFER, 4 * 2 * sizeof(float), positions, GL_STATIC_DRAW));
-    GLCall(glEnableVertexAttribArray(0));
-
-    // indeksi mistä aloitetaan, montako per vertexi, tyyppi, koko, pointteri
-    GLCall(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0));
-
-    unsigned int ibo; // index buffer object
-    GLCall(glGenBuffers(1, &ibo));
-    GLCall(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo));  // binding = valitaan
-    GLCall(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 6 * sizeof(unsigned int), indices, GL_STATIC_DRAW));
-
-
-    ShaderProgramSource source = ParseShader("res/shaders/Basic.shader"); // VS debug-modessa suhteellinen polku
-
-    unsigned int shader = CreateShader(source.VertexSource, source.FragmentSource);
-    GLCall(glUseProgram(shader));  // bindataan shader
-
-    int location = glGetUniformLocation(shader, "u_Color");  // haetaan u_Color-muuttujan sijainti
-    ASSERT(location != -1);
-    // sijainti, värikoodi
-    GLCall(glUniform4f(location, 0.8f, 0.3f, 0.8f, 1.0f));   // asetetaan data u_Coloriin
-
-    float red = 0.0f;
-    float red_increment = 0.05f;
-
-    /* Loop until the user closes the window */
-    while (!glfwWindowShouldClose(window))
+    // blokin ansiosta ohjelma lopetetaan kun piirtämisikkuna on suljetaan
+    // muuten tulee gl Error koska ei ole kontekstia
     {
-        /* Render here */
-        glClear(GL_COLOR_BUFFER_BIT);
+        // joka rivillä x, y -koordinaatit kolmelle eri vertexille
+        float positions[] = {
+           -0.5f, -0.5f,
+            0.5f, -0.5f,
+            0.5f,  0.5f,
+           -0.5f,  0.5f,
+        };
 
+        unsigned int indices[] = {
+            0, 1, 2,   // kolmion kulmat positions-rivit
+            2, 3, 0
+        };
 
-        GLCall(glUniform4f(location, red, 0.3f, 0.8f, 1.0f));   // asetetaan data u_Coloriin
+        // vertex array object id
+        unsigned int vao;
+        GLCall(glGenVertexArrays(1, &vao));  // luodaan yksi array ja tallennetaan sen id vao:on
+        GLCall(glBindVertexArray(vao));
 
-        // tämä piirtää sen mikä on VIIMEISIMPÄNÄ valittu eli BINDATTU ylempänä
-        //glDrawArrays(GL_TRIANGLES, 0, 6);  // mitä piirretään, mistä indeksistä aloitetaan, kuinka monta indeksiä
-        GLCall(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr));  // ei tarvitse laittaa pointteria iboon koska on bindattu
-        /* Swap front and back buffers */
+        VertexBuffer vebu(positions, 4 * 2 * sizeof(float));
 
-        if (red > 1.0f)
-            red_increment = -0.05f;
-        else if (red < 0.0f)
-            red_increment = 0.05f;
+        GLCall(glEnableVertexAttribArray(0));
 
-        red += red_increment;
+        // ibuffer bindattu vao:on ?
+        // vao:n indeksi mistä aloitetaan, montako per vertexi, tyyppi, koko, pointteri
+        GLCall(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0));
 
-        glfwSwapBuffers(window);
+        IndexBuffer ibu(indices, 6);
 
-        /* Poll for and process events */
-        glfwPollEvents();
+        ShaderProgramSource source = ParseShader("res/shaders/Basic.shader"); // VS debug-modessa suhteellinen polku
+
+        unsigned int shader = CreateShader(source.VertexSource, source.FragmentSource);
+        GLCall(glUseProgram(shader));  // bindataan shader
+
+        GLCall(int location = glGetUniformLocation(shader, "u_Color"));  // haetaan u_Color-muuttujan sijainti
+        ASSERT(location != -1);
+        // sijainti, värikoodi
+        GLCall(glUniform4f(location, 0.8f, 0.3f, 0.8f, 1.0f));   // asetetaan data u_Coloriin
+
+        GLCall(glBindVertexArray(0));
+        GLCall(glUseProgram(0));
+        GLCall(glBindBuffer(GL_ARRAY_BUFFER, 0));
+        GLCall(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0));
+
+        float red = 0.0f;
+        float red_increment = 0.05f;
+
+        /* Loop until the user closes the window */
+        while (!glfwWindowShouldClose(window))
+        {
+            /* Render here */
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            // 1. bind shader
+            GLCall(glUseProgram(shader));   
+            GLCall(glUniform4f(location, red, 0.3f, 0.8f, 1.0f));   // asetetaan data u_Coloriin
+
+            // 2. bind vertex array
+            GLCall(glBindVertexArray(vao));
+        
+            // 3. bind index buffer
+            ibu.Bind();
+
+            // tämä piirtää sen mikä on VIIMEISIMPÄNÄ valittu eli BINDATTU ylempänä
+            //glDrawArrays(GL_TRIANGLES, 0, 6);  // mitä piirretään, mistä indeksistä aloitetaan, kuinka monta indeksiä
+            GLCall(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr));  // ei tarvitse laittaa pointteria iboon koska on bindattu
+            /* Swap front and back buffers */
+
+            if (red > 1.0f)
+                red_increment = -0.05f;
+            else if (red < 0.0f)
+                red_increment = 0.05f;
+
+            red += red_increment;
+
+            glfwSwapBuffers(window);
+
+            /* Poll for and process events */
+            glfwPollEvents();
+        }
+        GLCall(glDeleteProgram(shader));
     }
-    
-    glDeleteProgram(shader);
+
 
     glfwTerminate();
     return 0;
