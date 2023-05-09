@@ -6,6 +6,27 @@
 #include <sstream>
 #include <fstream>
 
+#define ASSERT(x) if (!(x)) __debugbreak();
+#define GLCall(x) GLClearError(); x; ASSERT(GLLogCall(#x, __FILE__, __LINE__))
+
+
+
+static void GLClearError()
+{
+    while (glGetError() != GL_NO_ERROR);
+}
+
+static bool GLLogCall(const char* function, const char* file, int line)
+{
+    while (GLenum error = glGetError())
+    {
+        std::cout << "[OpenGL error] (" << error << "): " << 
+            function << " line: " << line << std::endl;
+        return false;
+    }
+    return true;
+}
+
 
 struct ShaderProgramSource
 {
@@ -116,32 +137,54 @@ int main(void)
     /* Make the window's context current */
     glfwMakeContextCurrent(window);
 
+    glfwSwapInterval(2);
+
     if (glewInit() != GLEW_OK)
         std::cout << "Error!" << std::endl;
 
     std::cout << glGetString(GL_VERSION) << std::endl;
 
     // joka rivillä x, y -koordinaatit kolmelle eri vertexille
-    float positions[6] = {
-       -0.2f, -0.2f,
-        0.0f,  0.5f,
-        0.5f, -0.5f
+    float positions[] = {
+       -0.5f, -0.5f,
+        0.5f, -0.5f,
+        0.5f,  0.5f,
+       -0.5f,  0.5f,
     };
 
-    unsigned int iBuffer;
-    glGenBuffers(1, &iBuffer);  // &iBuffer = generoidun bufferin ID
-    glBindBuffer(GL_ARRAY_BUFFER, iBuffer);  // binding = valitaan
-    glBufferData(GL_ARRAY_BUFFER, 6 * sizeof(float), positions, GL_STATIC_DRAW);
+    unsigned int indices[] = {
+        0, 1, 2,   // kolmion kulmat positions-rivit
+        2, 3, 0
+    };
 
-    glEnableVertexAttribArray(0);
+
+    unsigned int iBuffer;
+    GLCall(glGenBuffers(1, &iBuffer));  // &iBuffer = generoidun bufferin ID
+    GLCall(glBindBuffer(GL_ARRAY_BUFFER, iBuffer));  // binding = valitaan
+    GLCall(glBufferData(GL_ARRAY_BUFFER, 4 * 2 * sizeof(float), positions, GL_STATIC_DRAW));
+    GLCall(glEnableVertexAttribArray(0));
+
     // indeksi mistä aloitetaan, montako per vertexi, tyyppi, koko, pointteri
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
+    GLCall(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0));
+
+    unsigned int ibo; // index buffer object
+    GLCall(glGenBuffers(1, &ibo));
+    GLCall(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo));  // binding = valitaan
+    GLCall(glBufferData(GL_ELEMENT_ARRAY_BUFFER, 6 * sizeof(unsigned int), indices, GL_STATIC_DRAW));
+
 
     ShaderProgramSource source = ParseShader("res/shaders/Basic.shader"); // VS debug-modessa suhteellinen polku
 
     unsigned int shader = CreateShader(source.VertexSource, source.FragmentSource);
-    glUseProgram(shader);
+    GLCall(glUseProgram(shader));  // bindataan shader
 
+    int location = glGetUniformLocation(shader, "u_Color");  // haetaan u_Color-muuttujan sijainti
+    ASSERT(location != -1);
+    // sijainti, värikoodi
+    GLCall(glUniform4f(location, 0.8f, 0.3f, 0.8f, 1.0f));   // asetetaan data u_Coloriin
+
+    float red = 0.0f;
+    float red_increment = 0.05f;
 
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
@@ -149,10 +192,21 @@ int main(void)
         /* Render here */
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // tämä piirtää sen mikä on VIIMEISIMPÄNÄ valittu eli BINDATTU ylempänä
-        glDrawArrays(GL_TRIANGLES, 0, 3);  // mitä piirretään, mistä indeksistä aloitetaan, kuinka monta indeksiä
 
+        GLCall(glUniform4f(location, red, 0.3f, 0.8f, 1.0f));   // asetetaan data u_Coloriin
+
+        // tämä piirtää sen mikä on VIIMEISIMPÄNÄ valittu eli BINDATTU ylempänä
+        //glDrawArrays(GL_TRIANGLES, 0, 6);  // mitä piirretään, mistä indeksistä aloitetaan, kuinka monta indeksiä
+        GLCall(glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr));  // ei tarvitse laittaa pointteria iboon koska on bindattu
         /* Swap front and back buffers */
+
+        if (red > 1.0f)
+            red_increment = -0.05f;
+        else if (red < 0.0f)
+            red_increment = 0.05f;
+
+        red += red_increment;
+
         glfwSwapBuffers(window);
 
         /* Poll for and process events */
