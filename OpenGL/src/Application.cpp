@@ -9,6 +9,7 @@
 #include "Renderer.h"
 #include "VertexBuffer.h"
 #include "IndexBuffer.h"
+#include "VertexArray.h"
 
 
 struct ShaderProgramSource
@@ -152,13 +153,12 @@ int main(void)
         GLCall(glGenVertexArrays(1, &vao));  // luodaan yksi array ja tallennetaan sen id vao:on
         GLCall(glBindVertexArray(vao));
 
+        VertexArray va;
         VertexBuffer vebu(positions, 4 * 2 * sizeof(float));
+        VertexBufferLayout layout;
+        layout.Push<float>(2);
+        va.AddBuffer(vebu, layout);
 
-        GLCall(glEnableVertexAttribArray(0));
-
-        // ibuffer bindattu vao:on ?
-        // vao:n indeksi mistä aloitetaan, montako per vertexi, tyyppi, koko, pointteri
-        GLCall(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0));
 
         IndexBuffer ibu(indices, 6);
 
@@ -184,15 +184,18 @@ int main(void)
         while (!glfwWindowShouldClose(window))
         {
             /* Render here */
-            glClear(GL_COLOR_BUFFER_BIT);
+            GLCall(glClear(GL_COLOR_BUFFER_BIT));
 
             // 1. bind shader
             GLCall(glUseProgram(shader));   
             GLCall(glUniform4f(location, red, 0.3f, 0.8f, 1.0f));   // asetetaan data u_Coloriin
 
             // 2. bind vertex array
-            GLCall(glBindVertexArray(vao));
+            //GLCall(glBindVertexArray(vao));
         
+            // bind vertex array
+            va.Bind();
+
             // 3. bind index buffer
             ibu.Bind();
 
